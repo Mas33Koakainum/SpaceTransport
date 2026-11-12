@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using TMPro;
 using Unity.Collections;
 using Unity.Netcode;
+using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
-using TMPro;
 
 /// <summary>
 /// Lightweight multiplayer text chat for SpaceTransport.
@@ -18,6 +20,19 @@ public sealed class SpaceTransportChat : MonoBehaviour
     private const int MaxMessageLength = 160;
     private const int MaxVisibleMessages = 12;
     private const float SendCooldown = 0.75f;
+    private const float InactiveAlpha = 0.15f;
+    private const float ActiveAlpha = 1f;
+    private const float FadeDelay = 5f;
+    private const float FadeSpeed = 2f;
+    private static int escapeConsumedFrame = -1;
+    private static int submitConsumedFrame = -1;
+
+    public static bool WasEscapeConsumedThisFrame =>
+        escapeConsumedFrame == Time.frameCount;
+
+    private CanvasGroup canvasGroup;
+    private float lastActivityTime;
+    private float currentAlpha;
 
     private static SpaceTransportChat instance;
 
@@ -69,6 +84,21 @@ public sealed class SpaceTransportChat : MonoBehaviour
 
     private void Update()
     {
+        // Aktualizacja przezroczystości chatu
+        bool recentlyActive = Time.unscaledTime - lastActivityTime < FadeDelay;
+
+        float targetAlpha = (chatOpen || recentlyActive)
+            ? ActiveAlpha
+            : InactiveAlpha;
+
+        currentAlpha = Mathf.MoveTowards(
+            currentAlpha,
+            targetAlpha,
+            FadeSpeed * Time.unscaledDeltaTime
+        );
+
+        canvasGroup.alpha = currentAlpha;
+
         NetworkManager current = NetworkManager.Singleton;
 
         if (networkManager != current)
@@ -79,11 +109,13 @@ public sealed class SpaceTransportChat : MonoBehaviour
 
         if (networkManager != null && networkManager.IsListening && !handlerRegistered)
         {
-            networkManager.CustomMessagingManager.RegisterNamedMessageHandler(MessageName, OnMessageReceived);
+            networkManager.CustomMessagingManager.RegisterNamedMessageHandler(
+                MessageName, OnMessageReceived);
             handlerRegistered = true;
         }
 
         bool connected = networkManager != null && networkManager.IsListening;
+
         if (canvas != null && canvas.gameObject.activeSelf != connected)
             canvas.gameObject.SetActive(connected);
 
@@ -91,22 +123,38 @@ public sealed class SpaceTransportChat : MonoBehaviour
         {
             if (chatOpen)
                 CloseChat();
-            else
-                IsChatOpen = false;
 
             return;
         }
 
         Keyboard keyboard = Keyboard.current;
+
         if (keyboard == null)
             return;
 
-        if (!chatOpen && keyboard.enterKey.wasPressedThisFrame)
-            OpenChat();
-        else if (chatOpen && keyboard.escapeKey.wasPressedThisFrame)
-            CloseChat();
-    }
+        // Chat jest otwarty
+        if (chatOpen)
+        {
+            // ESC - zamknięcie chatu bez wysyłania
+            if (keyboard.escapeKey.wasPressedThisFrame)
+            {
+                escapeConsumedFrame = Time.frameCount;
+                CloseChat();
+                return;
+            }
 
+        }
+        else
+        {
+            // ENTER - otwarcie chatu
+            if (keyboard.enterKey.wasPressedThisFrame &&
+                submitConsumedFrame != Time.frameCount)
+            {
+                OpenChat();
+                return;
+            }
+        }
+    }
     private void OnDestroy()
     {
         if (networkManager != null && handlerRegistered)
@@ -136,6 +184,10 @@ public sealed class SpaceTransportChat : MonoBehaviour
         canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 100;
+
+        canvasGroup = canvasObject.AddComponent<CanvasGroup>();
+        canvasGroup.alpha = InactiveAlpha;
+        currentAlpha = InactiveAlpha;
 
         CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
@@ -193,15 +245,24 @@ public sealed class SpaceTransportChat : MonoBehaviour
         inputField.onSubmit.AddListener(SubmitMessage);
 
         inputObject.SetActive(false);
+        panel.SetActive(true);
         canvasObject.SetActive(false);
+        lastActivityTime = -FadeDelay;
     }
 
     private void OpenChat()
     {
         chatOpen = true;
         IsChatOpen = true;
+
+        panel.SetActive(true);
+
+        if(canvasGroup != null)
+            canvasGroup.alpha = ActiveAlpha;
+
         inputField.gameObject.SetActive(true);
         hintText.gameObject.SetActive(false);
+
         inputField.text = string.Empty;
         inputField.ActivateInputField();
         inputField.Select();
@@ -211,47 +272,65 @@ public sealed class SpaceTransportChat : MonoBehaviour
     {
         chatOpen = false;
         IsChatOpen = false;
-        inputField.DeactivateInputField();
-        inputField.gameObject.SetActive(false);
-        hintText.gameObject.SetActive(true);
+
+        if (inputField != null)
+        {
+            inputField.DeactivateInputField();
+            inputField.text = string.Empty;
+            inputField.gameObject.SetActive(false);
+        }
+
+        // Usuń zaznaczenie pola tekstowego z EventSystem.
+        if (EventSystem.current != null)
+        {
+            EventSystem.current.SetSelectedGameObject(null);
+        }
+
+        if (hintText != null)
+            hintText.gameObject.SetActive(true);
+
+        // Przywróć sterowanie myszą.
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
     }
 
     private void SubmitMessage(string rawMessage)
     {
+        if (!chatOpen)
+        {
+            return;
+        }
+
         string message = SanitizeMessage(rawMessage);
-        if (message.Length == 0)
-        {
-            inputField.text = string.Empty;
-            inputField.ActivateInputField();
-            return;
-        }
 
-        if (networkManager == null || !networkManager.IsListening)
-        {
-            CloseChat();
-            return;
-        }
+        // Nie pozwól, aby ten sam Enter ponownie otworzył chat.
+        submitConsumedFrame = Time.frameCount;
 
-        if (networkManager.IsServer)
+        // Zamknij pole tekstowe przed przywróceniem sterowania graczem.
+        CloseChat();
+
+        if (message.Length > 0 &&
+            networkManager != null &&
+            networkManager.IsListening)
         {
-            // Host messages are processed directly; custom messages are for remote clients.
-            ProcessChatMessage(networkManager.LocalClientId, message);
-        }
-        else
-        {
-            using (FastBufferWriter writer = new FastBufferWriter(1024, Allocator.Temp))
+            if (networkManager.IsServer)
             {
-                writer.WriteValueSafe(message);
-                networkManager.CustomMessagingManager.SendNamedMessage(
-                    MessageName,
-                    NetworkManager.ServerClientId,
-                    writer,
-                    NetworkDelivery.ReliableSequenced);
+                ProcessChatMessage(networkManager.LocalClientId, message);
+            }
+            else
+            {
+                using (FastBufferWriter writer = new FastBufferWriter(1024, Allocator.Temp))
+                {
+                    writer.WriteValueSafe(message);
+
+                    networkManager.CustomMessagingManager.SendNamedMessage(
+                        MessageName,
+                        NetworkManager.ServerClientId,
+                        writer,
+                        NetworkDelivery.ReliableSequenced);
+                }
             }
         }
-
-        inputField.text = string.Empty;
-        inputField.ActivateInputField();
     }
 
     private void OnMessageReceived(ulong senderClientId, FastBufferReader reader)
@@ -316,7 +395,18 @@ public sealed class SpaceTransportChat : MonoBehaviour
 
     private void AddMessage(string message)
     {
+        lastActivityTime = Time.unscaledTime;
+
+        if (panel != null)
+            panel.SetActive(true);
+
+        if (canvasGroup != null)
+            canvasGroup.alpha = ActiveAlpha;
+
+        currentAlpha = ActiveAlpha;
+
         messageHistory.Enqueue(message);
+
         while (messageHistory.Count > MaxVisibleMessages)
             messageHistory.Dequeue();
 

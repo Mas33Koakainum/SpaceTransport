@@ -140,7 +140,16 @@ public class NetworkMouseLook : NetworkBehaviour
         }
 
         if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+        {
+            if (SpaceTransportChat.IsChatOpen ||
+                SpaceTransportChat.WasEscapeConsumedThisFrame)
+            {
+                return;
+            }
+
             ToggleCameraEnabledAndMenu();
+        }
+
 
         if (!cameraEnabled)
         {
