@@ -221,14 +221,22 @@ public sealed class SpaceTransportChat : MonoBehaviour
             return;
         }
 
-        using (FastBufferWriter writer = new FastBufferWriter(256, Allocator.Temp))
+        if (networkManager.IsServer)
         {
-            writer.WriteValueSafe(message);
-            networkManager.CustomMessagingManager.SendNamedMessage(
-                MessageName,
-                NetworkManager.ServerClientId,
-                writer,
-                NetworkDelivery.ReliableSequenced);
+            // Host messages are processed directly; custom messages are for remote clients.
+            ProcessChatMessage(networkManager.LocalClientId, message);
+        }
+        else
+        {
+            using (FastBufferWriter writer = new FastBufferWriter(256, Allocator.Temp))
+            {
+                writer.WriteValueSafe(message);
+                networkManager.CustomMessagingManager.SendNamedMessage(
+                    MessageName,
+                    NetworkManager.ServerClientId,
+                    writer,
+                    NetworkDelivery.ReliableSequenced);
+            }
         }
 
         inputField.text = string.Empty;
@@ -250,8 +258,12 @@ public sealed class SpaceTransportChat : MonoBehaviour
         // The server receives raw text from a client and validates it before broadcasting.
         string rawMessage;
         reader.ReadValueSafe(out rawMessage);
-        string message = SanitizeMessage(rawMessage);
+        ProcessChatMessage(senderClientId, rawMessage);
+    }
 
+    private void ProcessChatMessage(ulong senderClientId, string rawMessage)
+    {
+        string message = SanitizeMessage(rawMessage);
         if (message.Length == 0)
             return;
 
