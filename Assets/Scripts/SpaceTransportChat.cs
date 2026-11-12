@@ -228,7 +228,7 @@ public sealed class SpaceTransportChat : MonoBehaviour
         }
         else
         {
-            using (FastBufferWriter writer = new FastBufferWriter(256, Allocator.Temp))
+            using (FastBufferWriter writer = new FastBufferWriter(1024, Allocator.Temp))
             {
                 writer.WriteValueSafe(message);
                 networkManager.CustomMessagingManager.SendNamedMessage(
@@ -275,12 +275,18 @@ public sealed class SpaceTransportChat : MonoBehaviour
         lastMessageTime[senderClientId] = now;
 
         string formatted = $"<color=#83CFFF>[{DateTime.Now:HH:mm}]</color> <b>Gracz {senderClientId}</b>: {EscapeRichText(message)}";
-        using (FastBufferWriter writer = new FastBufferWriter(512, Allocator.Temp))
+        using (FastBufferWriter writer = new FastBufferWriter(1024, Allocator.Temp))
         {
             writer.WriteValueSafe(formatted);
 
             foreach (ulong clientId in networkManager.ConnectedClientsIds)
             {
+                if (clientId == networkManager.LocalClientId)
+                {
+                    AddMessage(formatted);
+                    continue;
+                }
+
                 networkManager.CustomMessagingManager.SendNamedMessage(
                     MessageName,
                     clientId,
