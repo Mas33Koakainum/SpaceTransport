@@ -41,6 +41,15 @@ public class NetworkPlayerController : NetworkBehaviour
     {
         if (!IsOwner) return;
 
+        // While typing in chat, prevent keyboard input from moving or jumping the player.
+        if (SpaceTransportChat.IsChatOpen)
+        {
+            moveInput = Vector2.zero;
+            jumpPressed = false;
+            SubmitInputServerRpc(Vector2.zero, false);
+            return;
+        }
+
         ReadMovement();
 
         // Wysyłamy input do serwera (tylko zapisuje stan po stronie serwera)
