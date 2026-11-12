@@ -21,6 +21,8 @@ public sealed class SpaceTransportChat : MonoBehaviour
 
     private static SpaceTransportChat instance;
 
+    public static bool IsChatOpen { get; private set; }
+
     private readonly Dictionary<ulong, float> lastMessageTime = new Dictionary<ulong, float>();
     private readonly Queue<string> messageHistory = new Queue<string>();
 
@@ -88,6 +90,7 @@ public sealed class SpaceTransportChat : MonoBehaviour
         if (!connected)
         {
             chatOpen = false;
+            IsChatOpen = false;
             return;
         }
 
@@ -116,7 +119,10 @@ public sealed class SpaceTransportChat : MonoBehaviour
         }
 
         if (instance == this)
+        {
+            IsChatOpen = false;
             instance = null;
+        }
     }
 
     private void BuildHud()
@@ -190,6 +196,7 @@ public sealed class SpaceTransportChat : MonoBehaviour
     private void OpenChat()
     {
         chatOpen = true;
+        IsChatOpen = true;
         inputField.gameObject.SetActive(true);
         hintText.gameObject.SetActive(false);
         inputField.text = string.Empty;
@@ -200,6 +207,7 @@ public sealed class SpaceTransportChat : MonoBehaviour
     private void CloseChat()
     {
         chatOpen = false;
+        IsChatOpen = false;
         inputField.DeactivateInputField();
         inputField.gameObject.SetActive(false);
         hintText.gameObject.SetActive(true);
