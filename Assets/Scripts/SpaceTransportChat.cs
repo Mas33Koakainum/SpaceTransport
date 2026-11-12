@@ -89,8 +89,11 @@ public sealed class SpaceTransportChat : MonoBehaviour
 
         if (!connected)
         {
-            chatOpen = false;
-            IsChatOpen = false;
+            if (chatOpen)
+                CloseChat();
+            else
+                IsChatOpen = false;
+
             return;
         }
 
