@@ -237,9 +237,17 @@ public sealed class SpaceTransportChat : MonoBehaviour
 
     private void OnMessageReceived(ulong senderClientId, FastBufferReader reader)
     {
-        if (networkManager == null || !networkManager.IsServer)
+        if (networkManager == null)
             return;
 
+        // Clients receive the server's already-formatted broadcast.
+        if (!networkManager.IsServer)
+        {
+            ReceiveBroadcast(senderClientId, reader);
+            return;
+        }
+
+        // The server receives raw text from a client and validates it before broadcasting.
         string rawMessage;
         reader.ReadValueSafe(out rawMessage);
         string message = SanitizeMessage(rawMessage);
