@@ -65,7 +65,7 @@ public sealed class WireConnectionMinigame : MonoBehaviour
             SetOpen(!isOpen);
 
         if (activeDrag >= 0 && previewLine != null && Mouse.current != null)
-            UpdateLine(previewLine, GetBoardPoint(Mouse.current.position.ReadValue()), GetEndpointPoint(activeDrag, false));
+            UpdateLine(previewLine, GetEndpointPoint(activeDrag, true), GetBoardPoint(Mouse.current.position.ReadValue()));
     }
 
     private void OnDestroy()
