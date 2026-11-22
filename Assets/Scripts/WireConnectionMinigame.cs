@@ -178,7 +178,7 @@ public sealed class WireConnectionMinigame : MonoBehaviour
         RectTransform coreRect = core.GetComponent<RectTransform>();
         coreRect.anchorMin = coreRect.anchorMax = new Vector2(0.5f, 0.5f);
         coreRect.sizeDelta = new Vector2(24, 24);
-        core.AddComponent<Image>().color = color;
+        Image coreImage = core.AddComponent<Image>();\n        coreImage.color = color;\n        coreImage.raycastTarget = false;
 
         if (source)
         {
@@ -188,7 +188,7 @@ public sealed class WireConnectionMinigame : MonoBehaviour
         return rect;
     }
 
-    private void StartWireDrag(int colorIndex, Vector2 pointerPosition)
+    public void BeginWireDrag(int colorIndex, Vector2 pointerPosition)
     {
         if (!isOpen || connected[colorIndex]) return;
         activeDrag = colorIndex;
@@ -198,13 +198,13 @@ public sealed class WireConnectionMinigame : MonoBehaviour
         statusText.color = Color.white;
     }
 
-    private void DragWire(Vector2 pointerPosition)
+    public void MoveWireDrag(Vector2 pointerPosition)
     {
         if (activeDrag < 0 || previewLine == null) return;
         UpdateLine(previewLine, GetEndpointPoint(activeDrag, true), GetBoardPoint(pointerPosition));
     }
 
-    private void EndWireDrag(Vector2 pointerPosition)
+    public void FinishWireDrag(Vector2 pointerPosition)
     {
         if (activeDrag < 0) return;
         int color = activeDrag;
@@ -264,7 +264,7 @@ public sealed class WireConnectionMinigame : MonoBehaviour
     private Vector2 GetTargetPoint(int targetIndex)
     {
         RectTransform rect = targetRects[targetIndex];
-        Vector3 world = rect.TransformPoint(new Vector3(0f, 24f, 0f));
+        Vector3 world = rect.TransformPoint(new Vector3(-76f, 0f, 0f));
         RectTransformUtility.ScreenPointToLocalPointInRectangle(board, RectTransformUtility.WorldToScreenPoint(null, world), null, out Vector2 local);
         return local;
     }
@@ -282,7 +282,7 @@ public sealed class WireConnectionMinigame : MonoBehaviour
         rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
         rect.pivot = new Vector2(0, 0.5f);
         rect.sizeDelta = new Vector2(10, thickness);
-        line.AddComponent<Image>().color = color;
+        Image lineImage = line.AddComponent<Image>();\n        lineImage.color = color;\n        lineImage.raycastTarget = false;
         return rect;
     }
 
@@ -366,30 +366,32 @@ public sealed class WireConnectionMinigame : MonoBehaviour
         return button;
     }
 
-    public sealed class WireDragHandle : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
+}
+
+/// <summary>Pointer input adapter for a single wire connector.</summary>
+public sealed class WireDragHandle : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
+{
+    private WireConnectionMinigame owner;
+    private int colorIndex;
+
+    public void Initialize(WireConnectionMinigame minigame, int index)
     {
-        private WireConnectionMinigame owner;
-        private int colorIndex;
+        owner = minigame;
+        colorIndex = index;
+    }
 
-        public void Initialize(WireConnectionMinigame minigame, int index)
-        {
-            owner = minigame;
-            colorIndex = index;
-        }
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        if (owner != null) owner.BeginWireDrag(colorIndex, eventData.position);
+    }
 
-        public void OnPointerDown(PointerEventData eventData)
-        {
-            if (owner != null) owner.StartWireDrag(colorIndex, eventData.position);
-        }
+    public void OnDrag(PointerEventData eventData)
+    {
+        if (owner != null) owner.MoveWireDrag(eventData.position);
+    }
 
-        public void OnDrag(PointerEventData eventData)
-        {
-            if (owner != null) owner.DragWire(eventData.position);
-        }
-
-        public void OnPointerUp(PointerEventData eventData)
-        {
-            if (owner != null) owner.EndWireDrag(eventData.position);
-        }
+    public void OnPointerUp(PointerEventData eventData)
+    {
+        if (owner != null) owner.FinishWireDrag(eventData.position);
     }
 }
