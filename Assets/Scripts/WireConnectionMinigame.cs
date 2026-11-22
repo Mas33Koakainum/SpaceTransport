@@ -22,8 +22,10 @@ public sealed class WireConnectionMinigame : MonoBehaviour
         new Color(0.72f, 0.38f, 0.91f)
     };
 
-    [SerializeField] private bool showOnStart = true;
+    private const float CompletionCloseDelay = 2f;
+
     [SerializeField] private Key openKey = Key.F3;
+    [SerializeField] private bool showOnStart = false;
 
     private readonly bool[] connected = new bool[5];
     private readonly List<RectTransform> targetRects = new List<RectTransform>();
@@ -38,6 +40,11 @@ public sealed class WireConnectionMinigame : MonoBehaviour
     private int activeDrag = -1;
     private RectTransform previewLine;
     private bool isOpen;
+    private CursorLockMode previousCursorLockState;
+    private bool previousCursorVisible;
+
+    public static bool IsOpen =>
+        instance != null && instance.isOpen;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Bootstrap()
@@ -50,12 +57,16 @@ public sealed class WireConnectionMinigame : MonoBehaviour
 
     private void Awake()
     {
-        if (instance != null && instance != this) { Destroy(gameObject); return; }
+        if (instance != null && instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
         instance = this;
         DontDestroyOnLoad(gameObject);
         EnsureEventSystem();
         BuildInterface();
-        SetOpen(showOnStart);
     }
 
     private void Update()
@@ -103,6 +114,8 @@ public sealed class WireConnectionMinigame : MonoBehaviour
 
         overlay = CreateUIObject("Dim Background", canvasObject.transform);
         Stretch(overlay.GetComponent<RectTransform>());
+        overlay.SetActive(false);
+
         Image dim = overlay.AddComponent<Image>();
         dim.color = new Color(0.015f, 0.025f, 0.04f, 0.88f);
 
@@ -114,17 +127,31 @@ public sealed class WireConnectionMinigame : MonoBehaviour
         Image panelImage = panel.AddComponent<Image>();
         panelImage.color = new Color(0.075f, 0.105f, 0.14f, 1f);
 
-        CreateText("HEADER", board, "NAPRAWA OKABLOWANIA", 30, FontStyles.Bold,
-            new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, -48), new Vector2(700, 55));
+        CreateText(
+            "HEADER",
+            board,
+            "NAPRAWA OKABLOWANIA",
+            30,
+            FontStyles.Bold,
+            new Vector2(0.5f, 1),
+            new Vector2(0.5f, 1),
+            new Vector2(0, -48),
+            new Vector2(700, 55));
 
         CreateText("SUBHEADER", board, "PRZECIĄGNIJ KAŻDY PRZEWÓD DO GNIAZDA W TYM SAMYM KOLORZE", 15,
             FontStyles.Normal, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
             new Vector2(0, -91), new Vector2(900, 34));
 
         CreateText("LEFT LABEL", board, "WEJŚCIA", 14, FontStyles.Bold,
-            new Vector2(0, 1), new Vector2(0, 1), new Vector2(145, -145), new Vector2(160, 30));
+            new Vector2(0f, 1f),
+            new Vector2(0f, 1f),
+            new Vector2(155f, -145f),
+            new Vector2(160f, 30f));
         CreateText("RIGHT LABEL", board, "WYJŚCIA", 14, FontStyles.Bold,
-            new Vector2(1, 1), new Vector2(1, 1), new Vector2(-145, -145), new Vector2(160, 30));
+            new Vector2(1f, 1f),
+            new Vector2(1f, 1f),
+            new Vector2(-155f, -145f),
+            new Vector2(160f, 30f));
 
         statusText = CreateText("STATUS", board, "OCZEKIWANIE NA POŁĄCZENIE...", 16, FontStyles.Bold,
             new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 82), new Vector2(700, 35));
@@ -133,7 +160,13 @@ public sealed class WireConnectionMinigame : MonoBehaviour
 
         BuildEndpoints();
 
-        Button close = CreateButton("ZAMKNIJ  [F3]", board, new Vector2(0.5f, 0), new Vector2(0, 1), new Vector2(0, 18), new Vector2(190, 42));
+        Button close = CreateButton(
+            "ZAMKNIJ  [F3]",
+            board,
+            new Vector2(0.5f, 0),
+            new Vector2(0.5f, 0),
+            new Vector2(0, 18),
+            new Vector2(190, 42));
         close.onClick.AddListener(() => SetOpen(false));
     }
 
@@ -178,7 +211,9 @@ public sealed class WireConnectionMinigame : MonoBehaviour
         RectTransform coreRect = core.GetComponent<RectTransform>();
         coreRect.anchorMin = coreRect.anchorMax = new Vector2(0.5f, 0.5f);
         coreRect.sizeDelta = new Vector2(24, 24);
-        Image coreImage = core.AddComponent<Image>();\n        coreImage.color = color;\n        coreImage.raycastTarget = false;
+        Image coreImage = core.AddComponent<Image>();
+        coreImage.color = color;
+        coreImage.raycastTarget = false;
 
         if (source)
         {
@@ -234,7 +269,7 @@ public sealed class WireConnectionMinigame : MonoBehaviour
         }
         else
         {
-            statusText.text = matchedTarget < 0 ? "NIE PODŁĄCZONO. SPRÓBUJ PONOWNIE." : "ZŁY KOLOR! SPRÓBUJ PONOWNIE.";
+            statusText.text = matchedTarget < 0 ? "NIE PODŁĄCZONE. SPRÓBUJ PONOWNIE." : "ZŁY KOLOR! SPRÓBUJ PONOWNIE.";
             statusText.color = new Color(1f, 0.42f, 0.38f);
         }
     }
@@ -242,13 +277,29 @@ public sealed class WireConnectionMinigame : MonoBehaviour
     private void UpdateProgress()
     {
         int count = 0;
-        foreach (bool value in connected) if (value) count++;
+
+        foreach (bool value in connected)
+        {
+            if (value)
+                count++;
+        }
+
         progressText.text = "POŁĄCZONO: " + count + " / 5";
+
         if (count == 5)
         {
             statusText.text = "ZASILANIE PRZYWRÓCONE! ZADANIE WYKONANE.";
             statusText.color = new Color(0.35f, 1f, 0.58f);
+
+            CancelInvoke(nameof(CloseAfterCompletion));
+            Invoke(nameof(CloseAfterCompletion), CompletionCloseDelay);
         }
+    }
+
+    private void CloseAfterCompletion()
+    {
+        if (isOpen)
+            SetOpen(false);
     }
 
     private Vector2 GetEndpointPoint(int colorIndex, bool source)
@@ -282,7 +333,9 @@ public sealed class WireConnectionMinigame : MonoBehaviour
         rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
         rect.pivot = new Vector2(0, 0.5f);
         rect.sizeDelta = new Vector2(10, thickness);
-        Image lineImage = line.AddComponent<Image>();\n        lineImage.color = color;\n        lineImage.raycastTarget = false;
+        Image lineImage = line.AddComponent<Image>();
+        lineImage.color = color;
+        lineImage.raycastTarget = false;
         return rect;
     }
 
@@ -296,11 +349,46 @@ public sealed class WireConnectionMinigame : MonoBehaviour
 
     private void SetOpen(bool value)
     {
+        CancelInvoke(nameof(CloseAfterCompletion));
+
+        if (value == isOpen)
+            return;
+
+        if (value)
+        {
+            previousCursorLockState = Cursor.lockState;
+            previousCursorVisible = Cursor.visible;
+
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+
         isOpen = value;
-        if (overlay != null) overlay.SetActive(value);
-        if (!value && previewLine != null) Destroy(previewLine.gameObject);
+
+        if (overlay != null)
+            overlay.SetActive(value);
+
+        if (!value && previewLine != null)
+        {
+            Destroy(previewLine.gameObject);
+            previewLine = null;
+        }
+
         activeDrag = -1;
-        if (canvas != null) canvas.gameObject.SetActive(true);
+
+        if (canvas != null)
+            canvas.gameObject.SetActive(true);
+
+        if (value)
+        {
+            if (EventSystem.current != null)
+                EventSystem.current.SetSelectedGameObject(null);
+        }
+        else
+        {
+            Cursor.lockState = previousCursorLockState;
+            Cursor.visible = previousCursorVisible;
+        }
     }
 
     private void ResetTask()
@@ -336,13 +424,15 @@ public sealed class WireConnectionMinigame : MonoBehaviour
         rect.pivot = new Vector2(0.5f, 0.5f);
         rect.anchoredPosition = position;
         rect.sizeDelta = dimensions;
+
         TMP_Text text = go.AddComponent<TextMeshProUGUI>();
         text.text = value;
         text.fontSize = size;
         text.fontStyle = style;
         text.color = new Color(0.88f, 0.93f, 0.97f);
         text.alignment = TextAlignmentOptions.Center;
-        text.enableWordWrapping = true;
+        text.textWrappingMode = TextWrappingModes.Normal;
+
         return text;
     }
 
